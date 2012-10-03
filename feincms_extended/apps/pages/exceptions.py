@@ -1,0 +1,2 @@
+class UniqueTemplateException(Exception):
+    pass
