@@ -157,6 +157,8 @@ LOGGING = {
     }
 }
 
+FEINCMS_NAVIGATION_LEVEL = 2
+
 try:
     from local_settings import *
 except ImportError:

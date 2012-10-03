@@ -14,6 +14,17 @@ from pages.exceptions import FirstLevelOnlyTemplateException
 from pages.exceptions import NoChildrenTemplateException
 
 
+def get_max_navigation_level():
+    return getattr(django_settings, 'FEINCMS_NAVIGATION_LEVEL', None)
+
+
+def is_navigation_level_valid(level):
+    max_level = get_max_navigation_level()
+    if not max_level:
+        return True
+    return max_level >= level
+
+
 def check_template(model, template, instance=None, parent=None):
     def get_parent(parent):
         if not parent:
@@ -86,25 +97,26 @@ class PageAdminForm(PageAdminFormOld):
             template_key = cleaned_data['template_key']
             template = self.Meta.model._feincms_templates[template_key]
 
+            parent_error = None
             try:
                 check_template(
                     self.Meta.model, template, instance=self.instance, parent=parent
                 )
             except UniqueTemplateException:
-                self._errors['parent'] = ErrorList(
-                    [_('Template already used somewhere else.')]
-                )
-                del cleaned_data['parent']
+                parent_error = _('Template already used somewhere else')
             except FirstLevelOnlyTemplateException:
-                self._errors['parent'] = ErrorList(
-                    [_("This template can't be used as a subpage")]
-                )
-                del cleaned_data['parent']
+                parent_error = _("This template can't be used as a subpage")
             except NoChildrenTemplateException:
-                self._errors['parent'] = ErrorList(
-                    [_("This parent page can't have subpages")]
-                )
-                del cleaned_data['parent']
+                parent_error = _("This parent page can't have subpages")
+            else:
+                if not is_navigation_level_valid(parent.level+2):
+                    parent_error = _(
+                        "Only %d levels allowed" % get_max_navigation_level()
+                    )
+
+            if parent_error:
+                self._errors['parent'] = ErrorList([parent_error])
+                del cleaned_data['parent']                
         return cleaned_data
 
     def get_valid_templates(self, instance=None, parent=None):
@@ -155,8 +167,9 @@ class PageAdmin(PageAdminOld):
 
         template = self.model._feincms_templates.get(page.template_key)
         no_children = template and template.no_children
+        valid_navigation = is_navigation_level_valid(page.level+2)
 
-        if no_children and getattr(page, 'feincms_editable', True):
+        if (no_children or not valid_navigation) and getattr(page, 'feincms_editable', True):
             actions[1] = u'<img src="%spages/img/actions_placeholder.gif">' % django_settings.STATIC_URL
         return actions
 
