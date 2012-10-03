@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.contrib import messages
 from django.conf import settings as django_settings
 from django.utils.translation import ugettext_lazy as _
 from django.utils.safestring import mark_safe
@@ -9,20 +10,26 @@ from feincms.module.page.models import Page, PageAdmin as PageAdminOld
 from feincms.module.page.forms import PageAdminForm as PageAdminFormOld
 
 from pages.exceptions import UniqueTemplateException
+from pages.exceptions import FirstLevelOnlyTemplateException
 
 
 def check_template(model, template, instance=None, parent=None):
     if template.unique and model.objects.filter(
-                                template_key=template.key
-                            ).exclude(id=instance.id if instance else -1).count():
+                        template_key=template.key
+                    ).exclude(id=instance.id if instance else -1).count():
         raise UniqueTemplateException()
+
+    if template.first_level_only and parent:
+        raise FirstLevelOnlyTemplateException()
 
 
 def is_template_valid(model, template, instance=None, parent=None):
     try:
         check_template(model, template, instance=instance, parent=parent)
         return True
-    except UniqueTemplateException:
+    except (
+            UniqueTemplateException, FirstLevelOnlyTemplateException
+        ):
         pass
 
     return False
@@ -41,13 +48,9 @@ class PageAdminForm(PageAdminFormOld):
         choices = []
         for key, template in templates.items():
             if template.preview_image:
-                choices.append(
-                    (template.key, mark_safe(
-                        u'<img src="%s" alt="%s" /> %s' % (
-                            template.preview_image, template.key, template.title
-                        )
-                    ))
-                )
+                choices.append((template.key,
+                    mark_safe(u'<img src="%s" alt="%s" /> %s' % (
+                        template.preview_image, template.key, template.title))))
             else:
                 choices.append((template.key, template.title))
 
@@ -76,6 +79,11 @@ class PageAdminForm(PageAdminFormOld):
                     [_('Template already used somewhere else.')]
                 )
                 del cleaned_data['parent']
+            except FirstLevelOnlyTemplateException:
+                self._errors['parent'] = ErrorList(
+                    [_("This template can't be used as a subpage")]
+                )
+                del cleaned_data['parent']
         return cleaned_data
 
     def get_valid_templates(self, instance=None, parent=None):
@@ -97,6 +105,31 @@ class PageAdminForm(PageAdminFormOld):
 class PageAdmin(PageAdminOld):
     form = PageAdminForm
 
-# We have to unregister the default configuration, and register ours
+    def _move_node(self, request):
+        cut_item = self.model._tree_manager.get(pk=request.POST.get('cut_item'))
+        pasted_on = self.model._tree_manager.get(pk=request.POST.get('pasted_on'))
+        position = request.POST.get('position')
+
+        if position == 'last-child':
+            cut_item_template = self.model._feincms_templates[cut_item.template_key]
+            pasted_on_template = self.model._feincms_templates[pasted_on.template_key]
+
+            try:
+                check_template(
+                    self.model, cut_item_template, instance=cut_item, parent=pasted_on
+                )
+            except FirstLevelOnlyTemplateException:
+                msg = unicode(_(u"This page can't be used as subpage."))
+                messages.error(request, msg)
+                return HttpResponse(msg)
+            except:
+                msg = unicode(_(u"Server Error."))
+                messages.error(request, msg)
+                return HttpResponse(msg)
+
+        return super(PageAdmin, self)._move_node(request)
+
+
+# We have to unregister it, and then reregister
 admin.site.unregister(Page)
 admin.site.register(Page, PageAdmin)
