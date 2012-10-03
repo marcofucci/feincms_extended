@@ -11,16 +11,31 @@ from feincms.module.page.forms import PageAdminForm as PageAdminFormOld
 
 from pages.exceptions import UniqueTemplateException
 from pages.exceptions import FirstLevelOnlyTemplateException
+from pages.exceptions import NoChildrenTemplateException
 
 
 def check_template(model, template, instance=None, parent=None):
+    def get_parent(parent):
+        if not parent:
+            return None
+        if isinstance(parent, Page):
+            return parent
+        return Page.objects.get(id=parent)
+
     if template.unique and model.objects.filter(
-                        template_key=template.key
-                    ).exclude(id=instance.id if instance else -1).count():
+                                template_key=template.key
+                            ).exclude(id=instance.id if instance else -1).count():
         raise UniqueTemplateException()
 
-    if template.first_level_only and parent:
+    parent_page = get_parent(parent)
+    if template.first_level_only and parent_page:
         raise FirstLevelOnlyTemplateException()
+
+    if parent_page and model._feincms_templates[parent_page.template_key].no_children:
+        raise NoChildrenTemplateException()
+
+    if instance and template.no_children and instance.children.count():
+        raise NoChildrenTemplateException()
 
 
 def is_template_valid(model, template, instance=None, parent=None):
@@ -28,7 +43,8 @@ def is_template_valid(model, template, instance=None, parent=None):
         check_template(model, template, instance=instance, parent=parent)
         return True
     except (
-            UniqueTemplateException, FirstLevelOnlyTemplateException
+            UniqueTemplateException, FirstLevelOnlyTemplateException, 
+            NoChildrenTemplateException
         ):
         pass
 
@@ -84,6 +100,11 @@ class PageAdminForm(PageAdminFormOld):
                     [_("This template can't be used as a subpage")]
                 )
                 del cleaned_data['parent']
+            except NoChildrenTemplateException:
+                self._errors['parent'] = ErrorList(
+                    [_("This parent page can't have subpages")]
+                )
+                del cleaned_data['parent']
         return cleaned_data
 
     def get_valid_templates(self, instance=None, parent=None):
@@ -128,6 +149,16 @@ class PageAdmin(PageAdminOld):
                 return HttpResponse(msg)
 
         return super(PageAdmin, self)._move_node(request)
+
+    def _actions_column(self, page):
+        actions = super(PageAdmin, self)._actions_column(page)
+
+        template = self.model._feincms_templates.get(page.template_key)
+        no_children = template and template.no_children
+
+        if no_children and getattr(page, 'feincms_editable', True):
+            actions[1] = u'<img src="%spages/img/actions_placeholder.gif">' % django_settings.STATIC_URL
+        return actions
 
 
 # We have to unregister it, and then reregister

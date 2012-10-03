@@ -4,3 +4,7 @@ class UniqueTemplateException(Exception):
 
 class FirstLevelOnlyTemplateException(Exception):
     pass
+
+
+class NoChildrenTemplateException(Exception):
+    pass
