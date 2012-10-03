@@ -4,6 +4,10 @@ from feincms.content.richtext.models import RichTextContent
 
 
 class Template(FeinCMSTemplate):
+    """
+        Custom version of feincms.models.Template which adds support for 
+        unique, first-level-only and no-children properties.
+    """
     def __init__(
         self, title, path, regions, key=None, preview_image=None, unique=False,
         first_level_only=False, no_children=False
@@ -32,8 +36,8 @@ Page.register_templates(
             ('home_main', 'Main Content'),
         ),
         unique=True,
-    	first_level_only=True,
-    	no_children=True
+        first_level_only=True,
+        no_children=True
     )
 )
 

@@ -72,7 +72,6 @@ STATICFILES_DIRS = (
     # Put strings here, like "/home/html/static" or "C:/www/django/static".
     # Always use forward slashes, even on Windows.
     # Don't forget to use absolute paths, not relative paths.
-    os.path.join(PROJECT_ROOT, "assets"),
 )
 
 # List of finder classes that know how to find static files in
@@ -157,7 +156,7 @@ LOGGING = {
     }
 }
 
-FEINCMS_NAVIGATION_LEVEL = 2
+FEINCMS_NAVIGATION_LEVEL = 3
 
 try:
     from local_settings import *
